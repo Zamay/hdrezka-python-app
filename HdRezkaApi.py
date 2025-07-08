@@ -31,14 +31,39 @@ class HdRezkaApi():
 		self.HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/81.0.4044.138 Safari/537.36'}
 		self.url = url.split(".html")[0] + ".html"
 		self.page = self.getPage()
+		self.page.raise_for_status() # Перевірка на HTTP помилки (4xx, 5xx)
 		self.soup = self.getSoup()
-		self.id = self.extractId()
-		self.name = self.getName()
-		self.type = self.getType()
+
+		# Перевіряємо, чи не заблокувала нас сторінка (наприклад, Cloudflare)
+		if not self.soup.find(id="post_id"):
+			raise ValueError("Не вдалося знайти 'post_id'. Можливо, доступ заблоковано або URL невірний.")
+
+		# Ліниве завантаження властивостей
+		self._id = None
+		self._name = None
+		self._type = None
 
 		#other
 		self.translators = None
 		self.seriesInfo = None
+
+	@property
+	def id(self):
+		if self._id is None:
+			self._id = self.extractId()
+		return self._id
+
+	@property
+	def name(self):
+		if self._name is None:
+			self._name = self.getName()
+		return self._name
+
+	@property
+	def type(self):
+		if self._type is None:
+			self._type = self.getType()
+		return self._type
 
 	def getPage(self):
 		return requests.get(self.url, headers=self.HEADERS)
@@ -47,13 +72,22 @@ class HdRezkaApi():
 		return BeautifulSoup(self.page.content, 'html.parser')
 
 	def extractId(self):
-		return self.soup.find(id="post_id").attrs['value']
+		element = self.soup.find(id="post_id")
+		if not element:
+			raise ValueError("Не вдалося витягти ID")
+		return element.attrs['value']
 
 	def getName(self):
-		return self.soup.find(class_="b-post__title").get_text().strip()
+		element = self.soup.find(class_="b-post__title")
+		if not element:
+			return "Назву не знайдено"
+		return element.get_text().strip()
 
 	def getType(self):
-		return self.soup.find('meta', property="og:type").attrs['content']
+		element = self.soup.find('meta', property="og:type")
+		if not element:
+			return "video.unknown"
+		return element.attrs['content']
 
 	@staticmethod
 	def clearTrash(data):

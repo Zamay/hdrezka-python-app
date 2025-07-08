@@ -2,10 +2,16 @@ from flask import Flask, request, jsonify, render_template_string
 from flask_cors import CORS
 import json
 import traceback
+from time import time
 from HdRezkaApi import HdRezkaApi
 
 app = Flask(__name__)
 CORS(app)
+
+# Простий кеш в пам'яті. Для продакшену краще використовувати Redis або Memcached.
+# Ключ - URL, значення - словник з даними та часом збереження.
+CACHE = {}
+CACHE_TIMEOUT_SECONDS = 3600 # 1 година
 
 # HTML шаблон (вбудований в код)
 HTML_TEMPLATE = """
@@ -407,10 +413,18 @@ def parse_content():
         if not url:
             return jsonify({'error': 'URL є обов\'язковим'}), 400
         
+        # Перевіряємо кеш
+        cached_item = CACHE.get(url)
+        if cached_item and (time() - cached_item['timestamp'] < CACHE_TIMEOUT_SECONDS):
+            print(f"Повернення результату з кешу для URL: {url}")
+            return jsonify(cached_item['data'])
+
+        print(f"Кеш не знайдено або застарів. Виконую парсинг для URL: {url}")
         # Створюємо екземпляр API
         rezka = HdRezkaApi(url)
         
         # Отримуємо базову інформацію
+        # Використовуємо rezka.id, rezka.name, rezka.type, щоб спрацювали @property
         result = {
             'name': rezka.name,
             'type': rezka.type,
@@ -422,6 +436,12 @@ def parse_content():
         if rezka.type == 'video.tv_series':
             result['seasons'] = rezka.getSeasons()
         
+        # Зберігаємо результат в кеш
+        CACHE[url] = {
+            'data': result,
+            'timestamp': time()
+        }
+
         return jsonify(result)
         
     except Exception as e:
